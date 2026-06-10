@@ -96,14 +96,62 @@ def build_data_setting(args) -> dict:
     return json.loads(Path(args.data_setting_file).read_text(encoding="utf-8"))
 
 
+# 埋点/技术细节泄漏关键词：description 是给业务看的，出现这些多半写错了
+LEAK_TOKENS = [
+    "login_type", "event", "_log", "${", "pid", "select ", "where ", "count(",
+    "group by", "#dt", "#event", "=0", "= 0",
+    "近7天", "近 7 天", "天窗口", "动态", "时间窗口", "日期范围",
+]
+
+
+def build_description(args) -> str:
+    """组装并校验 description：主要内容 + 核心指标，强制分行。"""
+    main = (args.main_content or "").strip()
+    metrics = (args.core_metrics or "").strip()
+
+    if main or metrics:
+        if not (main and metrics):
+            sys.exit("error: --main-content 与 --core-metrics 需成对提供")
+        # 去掉用户可能自带的前缀，统一拼装
+        main = main.replace("主要内容：", "").replace("主要内容:", "").strip()
+        metrics = metrics.replace("核心指标：", "").replace("核心指标:", "").strip()
+        desc = f"主要内容：{main}\n核心指标：{metrics}"
+    elif args.description:
+        desc = args.description.strip()
+        # 自动补「核心指标」前的换行（业务展示要分行）
+        for tag in ("核心指标：", "核心指标:"):
+            if tag in desc:
+                before, after = desc.split(tag, 1)
+                if not before.rstrip().endswith("\n") and not before.endswith("\n"):
+                    desc = before.rstrip() + "\n" + tag + after
+                break
+    else:
+        sys.exit("error: 必须提供 --main-content + --core-metrics（推荐）或 --description")
+
+    # 业务化校验：主要内容里不该出现埋点/技术细节/时间窗口
+    main_part = desc.split("核心指标")[0]
+    hits = [t for t in LEAK_TOKENS if t.lower() in main_part.lower()]
+    if hits:
+        sys.stderr.write(
+            "⚠️ 警告：description「主要内容」疑似含埋点/技术细节或时间窗口，业务看不懂："
+            f" {hits}\n   description 应围绕 panel 内容+业务目的，参考飞书《数据看板目录》I 列写法。\n"
+        )
+    return desc
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="创建 FunnyDB panel")
     p.add_argument("--app-id", type=int, default=None)
     p.add_argument("--funnydb-dir", type=str, default=None)
     p.add_argument("--title", required=True, help="panel 标题（命名规范见 references/naming-governance.md）")
     p.add_argument("--event-model", default="raw_sql", choices=ALLOWED_MODELS)
-    p.add_argument("--description", required=True,
-                   help="必填。格式：主要内容：xxx。核心指标：xxx —— 供下游 ds 看板检索命中")
+    # description：推荐分别传 主要内容 + 核心指标，脚本按「主要内容：…\n核心指标：…」拼装
+    p.add_argument("--main-content", default=None,
+                   help="主要内容（业务化）：围绕 panel 内容+目的，「统计…，用于…」。禁埋点细节/事件名/过滤条件/时间窗口")
+    p.add_argument("--core-metrics", default=None,
+                   help="核心指标：顿号(、)分隔的业务化指标/维度名，与列标题对齐")
+    p.add_argument("--description", default=None,
+                   help="（高级）直接给完整 description，会自动补 主要内容/核心指标 之间的换行")
     p.add_argument("--sql-file", type=str, default=None, help="raw_sql 的 .sql 文件")
     p.add_argument("--variables-file", type=str, default=None,
                    help="可选，完整接管 event_view.variables[]（含 dt + selector 等复杂变量时用）")
@@ -123,12 +171,13 @@ def main() -> None:
 
     app_id, funnydb_dir = fc.resolve_env(args.app_id, args.funnydb_dir)
 
+    description = build_description(args)
     data_setting = build_data_setting(args)
     payload = {
         "app_id": app_id,
         "title": args.title,
         "event_model": args.event_model,
-        "description": args.description,
+        "description": description,
         "data_setting": data_setting,
     }
 

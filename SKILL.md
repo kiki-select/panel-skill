@@ -71,7 +71,9 @@ Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6
 
 1. **命名**：结构 `主题/模块-指标/对象-粒度/限定`（如 `活跃-同时在线-5分钟趋势`、`模式参与-经典派对-逐日`），对照《香肠派对》数据看板目录飞书表「调整后名称」列；标准词汇用 经典派对/摸金派对/街机派对、逐日/逐时累计/按周、活跃玩家/新进玩家/回流玩家，**不自造同义词**。防重名（重名会被自动加 `(1)`）。
 2. **空间/防污染**：测试产物用 `AI测试-` 前缀且用完即删；正式沉淀遵循目录标准命名（不强加 `AI-`，便于入目录），默认落当前用户私有空间。
-3. **description（必填）**：格式 `主要内容：<口径/回答什么问题>。核心指标：<列名>`。
+3. **description（必填，给业务看）**：`主要内容` 与 `核心指标` **分行**，存为 `主要内容：…\n核心指标：…`。
+   - 主要内容围绕 **panel 内容+业务目的**（「统计…，用于…」），**禁埋点细节/字段名/SQL/时间窗口**（动态日期由使用者自选，不提时间）。参考飞书目录 I 列「看板主要内容」写法。
+   - 脚本用 `--main-content` + `--core-metrics` 自动拼分行格式，并对埋点/时间词做泄漏告警。
    - **这是与 ds 看板检索的闭环**：ds 已改为 description-优先检索；不写 description 就是给下游挖坑。
 
 ### Step 4：建 panel + 验证出数
@@ -83,11 +85,12 @@ PYTHONIOENCODING=utf-8 python -X utf8 \
   .claude/skills/panel/scripts/create_panel.py \
   --app-id <APP_ID> \
   --funnydb-dir <funnydb skill 路径> \
-  --title "AI-<业务域-指标-粒度>" \
+  --title "主题-指标-粒度" \
   --event-model raw_sql \
   --sql-file <path/to/panel.sql> \
   --date-start-offset 7 --date-end-offset 1 \
-  --description "主要内容：...。核心指标：..."
+  --main-content "统计…，用于…（业务化，禁埋点/时间窗口）" \
+  --core-metrics "日期、xxx数"
 ```
 
 - 脚本只传 `data_setting`，**不传 `setting`**（服务端生成）。
@@ -125,7 +128,7 @@ PYTHONIOENCODING=utf-8 python -X utf8 \
 4. **SQL 书写遵循 ds 的 clickhouse-sql-conventions** —— 除日期用动态外，其余规范与 ds 一致
 5. **列标题必须中文** —— 每列给中文别名，不留英文/原始字段名（panel 直接展示）；格式人工调
 6. **只传 data_setting，不传 setting** —— 前端配置由服务端生成
-7. **description 必填且按格式** —— 主要内容（口径）+ 核心指标（列名），与 ds 检索闭环
+7. **description 必填、给业务看、分行** —— 主要内容（内容+目的）`\n` 核心指标；禁埋点细节/字段名/时间窗口，与 ds 检索闭环
 8. **命名与《香肠派对》数据看板目录统一** —— `主题-指标-粒度` 结构、标准词汇（经典派对/摸金派对/街机派对…），对照飞书目录的「调整后名称」列
 9. **dashboards/create 不能追加** —— 多 panel 一次性 `panel_ids` 带全
 10. **prod 防污染** —— 测试加 `AI测试-` 前缀用完即删，正式遵循目录标准命名、默认落私有空间

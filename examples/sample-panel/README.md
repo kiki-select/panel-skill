@@ -16,7 +16,7 @@ python ../../scripts/create_panel.py \
   --title "AI测试-经典派对-逐日登录账号数" \
   --event-model raw_sql \
   --sql-file panel.sql \
-  --description "主要内容：统计指定日期范围逐日登录账号数。核心指标：日期、登录账号数"
+  --main-content "统计每日登录账号规模，反映大盘活跃用户体量与日常波动，用于日常活跃监控。" \n  --core-metrics "日期、登录账号数"
 ```
 
 成功后输出 `panel_id` / `panel_url`，并自动拉一次数验证（前 5 行预览）。
