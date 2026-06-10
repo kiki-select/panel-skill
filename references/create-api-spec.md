@@ -48,10 +48,12 @@
 
 ## ⚠️ 实测约束（文档没明说但务必知道）
 
-1. **反引号坑**：raw_sql 里的 `` `#dt` `` / `` `#event` `` 经 funnydb shim 的 WSL `bash -c`
-   会被当命令替换**吃空**。必须在 JSON payload 里把反引号转成 `\u0060`（6 个字面字符，每个反引号一份），
-   服务端解析 JSON 后还原。脚本 `funnydb_client.escape_payload` 已自动处理；
-   **手动 inline 调接口时这是头号事故源**。
+1. **反引号 / 美元号坑（头号事故源）**：raw_sql 经 funnydb shim 的 WSL `bash -c` 传参时，
+   shell 会吃掉两类字符：
+   - 反引号 `\u0060`（命令替换）：如 `` `#dt` `` / `` `#event` `` 会被清空 → `='xxx'` 前字段没了
+   - 美元号 `$`（变量展开）：如 `${dt:date}` 动态日期占位符会被整段清空 → `and  and` 语法错
+   必须在 JSON payload 里把反引号转 `\u0060`、把 `$` 转 `\u0024`（JSON 解析后还原，但 shell 看不到真实字符）。
+   脚本 `funnydb_client.escape_payload` 已自动处理两者；**手动 inline 调接口时务必注意**。
 2. **dashboards/create 永远新建**：即使传 `dashboard_id` 也会被忽略、另建新看板（重名自动加 `(1)`）。
 3. **没有「往已有看板追加 panel」的接口**：要把多个 panel 放一个看板，
    只能在 `dashboards/create` 这一次把 `panel_ids` 全列上。

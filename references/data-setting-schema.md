@@ -13,8 +13,10 @@
 ```
 
 - `events.sql`：完整 SQL。系统字段（#dt/#event/#time）用反引号；脚本会自动把反引号转成 `\u0060` 转义。
-- 静态日期：直接 `` `#dt` between '2026-06-01' and '2026-06-07' ``。
-- 动态/可交互日期：SQL 里用 `${dt:date}` 模板，并在 `event_view.variables[]` 声明变量：
+- **动态日期（panel 默认、推荐）**：SQL 日期过滤处写 `${dt:date}` 占位，并在 `event_view.variables[]` 声明 dt 变量。
+  panel 要常驻刷新，必须动态日期（这与 ds 取数「写死静态日期」相反 —— ds 是一次性落 CSV）。
+- 静态日期（仅特殊场景）：直接 `` `#dt` between '2026-06-01' and '2026-06-07' ``，脚本需显式 `--static-date`。
+- dt 变量示例：
 
 ```json
 {
@@ -22,12 +24,18 @@
     "variables": [
       {
         "name": "date", "type": "dt", "title": "日期",
-        "param": { "dynamic_start_value": 7, "dynamic_end_value": 1, "dynamic_granularity": "day" }
+        "param": {
+          "dynamic_start_value": 7, "dynamic_end_value": 1, "dynamic_granularity": "day",
+          "start_time": "2026-06-02 00:00:00", "end_time": "2026-06-08 23:59:59"
+        }
       }
     ]
   }
 }
 ```
+
+> ⚠️ **dynamic_* 是动态刷新的真正来源**（N 天前~M 天前）；**start_time/end_time 是快照兜底**，缺了会导致 ${dt:date} 在 panels/data 拉数时解析失败。
+> 脚本 create_panel.py 默认按 --date-start-offset/--date-end-offset 自动算出并填上这两个值。
 
 > selector 类变量（平台/模式/段位）结构较复杂，建议从一个**现成同类 panel** 的 `panels/details`
 > 拷贝 `data_setting.event_view.variables[]` 改造，不要从零手搓。

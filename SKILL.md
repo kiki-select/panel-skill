@@ -57,14 +57,18 @@ Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6
 
 支持的模型：`event` / `retention` / `ltv` / `raw_sql` / `distribution` / `funnel` / `interval`（详见 [references/data-setting-schema.md](references/data-setting-schema.md)）。
 
-- **raw_sql**：把 SQL 落成 `.sql` 文件即可（脚本自动 ` 转义反引号）。用到 `${dt:date}` 等模板变量时，额外准备 `event_view.variables[]` 的 JSON。
+- **raw_sql**：把 SQL 落成 `.sql` 文件即可（脚本自动转义反引号和 `$`）。
+  - **SQL 书写规范统一**：遵循 ds-skill 的 [`references/clickhouse-sql-conventions.md`](../ds-skill/references/clickhouse-sql-conventions.md)（命名、缩进、系统字段反引号、左连接、不做展示格式化等）。
+  - **⚠️ 与 ds 唯一的差异——日期**：ds 取数写**静态日期**（一次性落 CSV，禁用模板占位符）；**panel 必须用动态日期** `${dt:date}`（报表常驻刷新）。这是两个技能最关键的分野。
+  - 默认动态：SQL 日期过滤处写 `${dt:date}`，脚本自动生成 dt 变量（`--date-start-offset`/`--date-end-offset` 控制窗口，默认近7天到昨天）。要写死日期需显式 `--static-date`。
+  - 复杂变量（平台/模式/段位 selector）：从同类现成 panel 的 `panels/details` 拷 `variables[]` 改造，用 `--variables-file` 完整接管。
 - **非 raw_sql**：**不要手搓** `data_setting`，直接复用 ds `analyse/query` 返回的 `data_setting`，落成 JSON 文件。
 
 ### Step 3：治理三件套（建库前必做）
 
 按 [references/naming-governance.md](references/naming-governance.md)：
 
-1. **命名**：`[前缀] 业务域-指标-粒度`，具体可检索、防重名（重名会被自动加 `(1)`）。
+1. **命名**：`[前缀] 业务域-指标-粒度`，**业务域用现有看板目录的标准叫法**（经典派对/摸金/BR…），与飞书 wiki 看板目录统一、能对号入座到对应空间。具体可检索、防重名（重名会被自动加 `(1)`）。
 2. **空间/防污染**：测试产物用 `AI测试-` 前缀且用完即删；正式沉淀用 `AI-` 前缀。看板默认落当前用户私有空间。
 3. **description（必填）**：格式 `主要内容：<口径/回答什么问题>。核心指标：<列名>`。
    - **这是与 ds 看板检索的闭环**：ds 已改为 description-优先检索；不写 description 就是给下游挖坑。
@@ -73,6 +77,7 @@ Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6
 
 ```bash
 # 假设 panel-skill 装在 .claude/skills/panel，funnydb 装在 .claude/skills/funnydb
+# 默认动态日期：SQL 里日期过滤处写 ${dt:date}，下面 --date-* 控制窗口
 PYTHONIOENCODING=utf-8 python -X utf8 \
   .claude/skills/panel/scripts/create_panel.py \
   --app-id <APP_ID> \
@@ -80,11 +85,13 @@ PYTHONIOENCODING=utf-8 python -X utf8 \
   --title "AI-<业务域-指标-粒度>" \
   --event-model raw_sql \
   --sql-file <path/to/panel.sql> \
+  --date-start-offset 7 --date-end-offset 1 \
   --description "主要内容：...。核心指标：..."
 ```
 
 - 脚本只传 `data_setting`，**不传 `setting`**（服务端生成）。
-- 建完默认 `panels/data` 拉一次数验证（`--no-verify` 可关）：**0 行或语法错多半是反引号被吃**（见踩坑）。
+- **默认动态日期**：SQL 必须含 `${dt:date}`，否则脚本报错提示（要静态日期加 `--static-date`）。
+- 建完默认 `panels/data` 拉一次数验证（`--no-verify` 可关）：**0 行或语法错多半是反引号/`$` 被 shell 吃**（见踩坑），脚本已自动转义。
 - 非 raw_sql：`--event-model <模型> --data-setting-file <json>`。
 
 ### Step 5（可选）：编排 dashboard
@@ -112,12 +119,15 @@ PYTHONIOENCODING=utf-8 python -X utf8 \
 ## 铁律
 
 1. **未校验的 query 不准建 panel** —— 前置交给 ds，建错口径的常驻看板是长期事故
-2. **raw_sql 反引号必须 ` 转义** —— 脚本已自动；手动 inline 调接口是头号事故源
-3. **只传 data_setting，不传 setting** —— 前端配置由服务端生成
-4. **description 必填且按格式** —— 主要内容（口径）+ 核心指标（列名），与 ds 检索闭环
-5. **dashboards/create 不能追加** —— 多 panel 一次性 `panel_ids` 带全
-6. **prod 防污染** —— 测试加 `AI测试-` 前缀用完即删，正式加 `AI-` 前缀，默认落私有空间
-7. **URL 不硬编码、不伪造** —— 只上报接口真实返回值
+2. **panel 用动态日期 `${dt:date}`，不写死日期** —— 报表常驻刷新（与 ds 取数写静态日期相反）
+3. **raw_sql 反引号和 `$` 必须转义** —— 反引号转 `\u0060`、`$` 转 `\u0024`，脚本已自动；手动 inline 调接口是头号事故源
+4. **SQL 书写遵循 ds 的 clickhouse-sql-conventions** —— 除日期用动态外，其余规范与 ds 一致
+5. **只传 data_setting，不传 setting** —— 前端配置由服务端生成
+6. **description 必填且按格式** —— 主要内容（口径）+ 核心指标（列名），与 ds 检索闭环
+7. **命名与看板目录统一** —— 业务域用现有空间/文件夹的标准叫法，对齐飞书 wiki
+8. **dashboards/create 不能追加** —— 多 panel 一次性 `panel_ids` 带全
+9. **prod 防污染** —— 测试加 `AI测试-` 前缀用完即删，正式加 `AI-` 前缀，默认落私有空间
+10. **URL 不硬编码、不伪造** —— 只上报接口真实返回值
 
 ---
 
@@ -125,6 +135,17 @@ PYTHONIOENCODING=utf-8 python -X utf8 \
 
 | 问题 | 解决 |
 |---|---|
+| panel 建成但拉数 0 行 / 语法错（`='xxx'` 前字段没了） | 反引号被 WSL bash -c 吃空，payload 里反引号要转 `\u0060`；用脚本即自动 |
+| 动态日期 panel 拉数报 `and  and` 语法错 | `${dt:date}` 的 `$` 被 shell 吃空，要转 `\u0024`；脚本已自动转义 |
+| `${dt:date}` 拉数解析失败 | dt 变量 param 缺 start_time/end_time 兜底；脚本按 offset 自动补 |
+| 传了 dashboard_id 却新建了看板 | 接口不支持追加，永远新建；多 panel 一次性 `panel_ids` 带全 |
+| panel/看板重名 | 自动加 `(1)` 后缀不报错；命名要具体 |
+| 下游 ds 检索不到我建的报表 | description 没写或太水；按「主要内容+核心指标」写清口径 |
+| 命名和人工报表对不上 | 业务域用现有目录标准叫法，别自造同义词；对照飞书 wiki |
+| 返回 URL 缺域名 | app 站点配置不可用，路径仍是前端路由，可补域名前缀，别伪造 |
+| 非 raw_sql 模型 data_setting 难搓 | 别手搓，复用 ds `analyse/query` 返回的 data_setting |
+
+---|---|
 | panel 建成但拉数 0 行 / 语法错（`='xxx'` 前字段没了） | 反引号被 WSL bash -c 吃空，payload 里反引号要转 `\u0060`；用脚本即自动 |
 | 传了 dashboard_id 却新建了看板 | 接口不支持追加，永远新建；多 panel 一次性 `panel_ids` 带全 |
 | panel/看板重名 | 自动加 `(1)` 后缀不报错；命名要具体 |

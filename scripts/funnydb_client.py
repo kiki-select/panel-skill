@@ -20,6 +20,7 @@ from pathlib import Path
 # 反引号 / 反斜杠用 chr() 表示，避免源码里的字面量被 shell/heredoc 误处理
 BACKTICK = chr(96)
 BACKSLASH = chr(92)
+DOLLAR = chr(36)
 
 GIT_BASH_CANDIDATES = [
     os.environ.get("GIT_BASH"),
@@ -48,9 +49,11 @@ def find_bash() -> str:
 
 
 def escape_payload(payload: dict) -> str:
-    """序列化 payload，并把反引号转成 \u0060 字面，规避 WSL bash -c 的命令替换吞噬。"""
+    """序列化 payload，转义 WSL bash -c 会吞掉的两类字符：反引号(命令替换)与美元号(变量展开)；否则 SQL 的 #dt 反引号、${dt:date} 占位符会被 shell 清空。JSON 解析后还原为字面字符。"""
     s = json.dumps(payload, ensure_ascii=False)
-    return s.replace(BACKTICK, BACKSLASH + "u0060")
+    s = s.replace(BACKTICK, BACKSLASH + "u0060")
+    s = s.replace(DOLLAR, BACKSLASH + "u0024")
+    return s
 
 
 def call(funnydb_dir: str, path: str, payload: dict) -> dict:
