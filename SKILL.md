@@ -61,7 +61,7 @@ Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6
   - **SQL 书写规范统一**：遵循 ds-skill 的 [`references/clickhouse-sql-conventions.md`](../ds-skill/references/clickhouse-sql-conventions.md)（命名、缩进、系统字段反引号、左连接等）。
   - **列标题用中文**：每个 select 列都给中文别名（`as "登录账号数"`），不留英文/原始字段名当列头——panel 要直接展示。格式（单位/round/小数位）不用管，人工调。
   - **⚠️ 与 ds 唯一的差异——日期**：ds 取数写**静态日期**（一次性落 CSV，禁用模板占位符）；**panel 必须用动态日期** `${dt:date}`（报表常驻刷新）。这是两个技能最关键的分野。
-  - 默认动态：SQL 日期过滤处写 `${dt:date}`，脚本自动生成 dt 变量（`--date-start-offset`/`--date-end-offset` 控制窗口，默认近7天到昨天）。要写死日期需显式 `--static-date`。
+  - 默认动态：SQL 日期过滤处写 `${dt:date}`，脚本自动生成 dt 变量（`--date-start-offset`/`--date-end-offset` 控制窗口，默认近7天到昨天）。要写死日期需显式 `--static-date`（**仅限一次性快照；常驻看板即便做固定区间分析，也用 `${dt:date}` 控制数据范围，区间边界另在 SQL 内写字面量**）。
   - 复杂变量（平台/模式/段位 selector）：从同类现成 panel 的 `panels/details` 拷 `variables[]` 改造，用 `--variables-file` 完整接管。
 - **非 raw_sql**：**不要手搓** `data_setting`，直接复用 ds `analyse/query` 返回的 `data_setting`，落成 JSON 文件。
 
@@ -123,10 +123,10 @@ PYTHONIOENCODING=utf-8 python -X utf8 \
 ## 铁律
 
 1. **未校验的 query 不准建 panel** —— 前置交给 ds，建错口径的常驻看板是长期事故
-2. **panel 用动态日期 `${dt:date}`，不写死日期** —— 报表常驻刷新（与 ds 取数写静态日期相反）
+2. **panel 用动态日期 `${dt:date}`，不写死日期** —— 报表常驻刷新（与 ds 取数写静态日期相反）。**即便做固定业务区间分析（如"各期/各段"），也只把区间边界作为字面量写进 SQL 做分桶/映射，驱动数据范围的 `#dt` 过滤仍必须是 `${dt:date}`；`--static-date` 仅限一次性快照，常驻看板禁用。**
 3. **raw_sql 反引号和 `$` 必须转义** —— 反引号转 `\u0060`、`$` 转 `\u0024`，脚本已自动；手动 inline 调接口是头号事故源
 4. **SQL 书写遵循 ds 的 clickhouse-sql-conventions** —— 除日期用动态外，其余规范与 ds 一致
-5. **列标题必须中文** —— 每列给中文别名，不留英文/原始字段名（panel 直接展示）；格式人工调
+5. **列标题必须中文、分母列在前** —— 每列给中文别名，不留英文/原始字段名（panel 直接展示）；出率时列按 **分母→分子→率** 排（如 活跃→点击→点击率），让率的来源一目了然；格式人工调
 6. **只传 data_setting，不传 setting** —— 前端配置由服务端生成
 7. **description 必填、给业务看、分行** —— 主要内容（内容+目的）`\n` 核心指标；禁埋点细节/字段名/时间窗口，与 ds 检索闭环
 8. **命名与《香肠派对》数据看板目录统一** —— `主题-指标-粒度` 结构、标准词汇（经典派对/摸金派对/街机派对…），对照飞书目录的「调整后名称」列
